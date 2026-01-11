@@ -1,4 +1,8 @@
-"""Brute force runner with checkpointing."""
+"""Brute force runner with checkpointing and multiprocessing."""
+
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from threading import Lock
+import time
 
 from .config import Config
 from .generator import PolynomialGenerator
@@ -8,8 +12,46 @@ from .cache import ResultCache
 from .state import BruteForceState
 
 
+def process_pair_worker(args):
+    """
+    Worker function for processing a single pair (must be top-level for pickling).
+    
+    Args:
+        args: Tuple of (f, g, config)
+        
+    Returns:
+        Tuple of (f, g, q, divisibility, was_cached)
+    """
+    f, g, config = args
+    
+    # Create process-local instances
+    cache = ResultCache(config.cache_file)
+    
+    try:
+        # Check cache first
+        cached = cache.get_result(f, g)
+        if cached:
+            return (f, g, None, {}, True)
+        
+        # Create instances for this process
+        finder = DependencyFinder(config)
+        checker = DivisibilityChecker()
+        
+        # Find dependency
+        q = finder.find_dependency(f, g)
+        
+        # Check divisibility if dependency found
+        divisibility = {}
+        if q:
+            divisibility = checker.check_conditions(q, f, g)
+        
+        return (f, g, q, divisibility, False)
+    finally:
+        cache.close()
+
+
 class BruteForceRunner:
-    """Run brute force search with state persistence."""
+    """Run brute force search with state persistence and multiprocessing."""
     
     def __init__(self, config: Config):
         """
@@ -20,13 +62,15 @@ class BruteForceRunner:
         """
         self.config = config
         self.generator = PolynomialGenerator(config)
-        self.finder = DependencyFinder(config)
-        self.checker = DivisibilityChecker()
-        self.cache = ResultCache(config.cache_file)
         self.state = BruteForceState.load(config.state_file)
+        
+        # Thread-safe lock for state updates
+        self.state_lock = Lock()
+        self.cache_lock = Lock()
+        self.checkpoint_counter = 0
     
     def run(self):
-        """Run brute force search with checkpointing."""
+        """Run brute force search with parallel processing and checkpointing."""
         print("Starting brute force search...")
         print(f"Configuration:")
         print(f"  Max degree f: {self.config.max_degree_f}")
@@ -34,6 +78,7 @@ class BruteForceRunner:
         print(f"  Max degree q: {self.config.max_degree_q}")
         print(f"  Coefficient range: [{self.config.coeff_min}, {self.config.coeff_max}]")
         print(f"  Strategy: {self.config.enum_strategy}")
+        print(f"  Workers: {self.config.num_workers}")
         print()
         
         if self.state.total_pairs_checked > 0:
@@ -41,44 +86,21 @@ class BruteForceRunner:
             print(self.state.get_summary())
             print()
         
-        checkpoint_counter = 0
-        
         try:
+            # Collect pairs into batches for parallel processing
+            pairs_batch = []
+            
             for f, g in self.generator.generate_pairs():
-                # Check cache first
-                cached = self.cache.get_result(f, g)
-                if cached:
-                    print(f"[CACHED] f={f}, g={g}")
-                    continue
+                pairs_batch.append((f, g))
                 
-                print(f"[CHECKING] f={f}, g={g}")
-                
-                # Find dependency
-                q = self.finder.find_dependency(f, g)
-                
-                # Check divisibility if dependency found
-                divisibility = {}
-                if q:
-                    divisibility = self.checker.check_conditions(q, f, g)
-                    print(f"  Found q={q}")
-                    print(f"  ∂q/∂f : ∂q/∂x = {divisibility['df_divisible']}")
-                    print(f"  ∂q/∂g : ∂q/∂x = {divisibility['dg_divisible']}")
-                else:
-                    print(f"  No dependency found")
-                
-                # Save result
-                self.cache.save_result(f, g, q, divisibility)
-                
-                # Update state
-                self.state.update_progress(0, 0, q is not None)
-                
-                # Checkpoint
-                checkpoint_counter += 1
-                if checkpoint_counter >= self.config.checkpoint_interval:
-                    self.state.save(self.config.state_file)
-                    checkpoint_counter = 0
-                    print(f"[CHECKPOINT] {self.state.total_pairs_checked} pairs checked")
-                    print()
+                # Process batch when it reaches batch_size
+                if len(pairs_batch) >= self.config.batch_size:
+                    self._process_batch(pairs_batch)
+                    pairs_batch = []
+            
+            # Process remaining pairs
+            if pairs_batch:
+                self._process_batch(pairs_batch)
         
         except KeyboardInterrupt:
             print("\n\nInterrupted by user. Saving state...")
@@ -95,10 +117,73 @@ class BruteForceRunner:
             print("="*60)
             print(self.state.get_summary())
             
-            stats = self.cache.get_statistics()
-            print(f"\nCache statistics:")
-            print(f"  Total results: {stats['total']}")
-            print(f"  With dependency: {stats['with_dependency']}")
-            print(f"  Both conditions satisfied: {stats['both_divisible']}")
+            # Get statistics with temporary cache connection
+            cache = ResultCache(self.config.cache_file)
+            try:
+                stats = cache.get_statistics()
+                print(f"\nCache statistics:")
+                print(f"  Total results: {stats['total']}")
+                print(f"  With dependency: {stats['with_dependency']}")
+                print(f"  Both conditions satisfied: {stats['both_divisible']}")
+            finally:
+                cache.close()
+    
+    def _process_batch(self, pairs_batch):
+        """
+        Process a batch of pairs in parallel using multiple processes.
+        
+        Args:
+            pairs_batch: List of (f, g) tuples
+        """
+        # Prepare arguments for worker processes
+        worker_args = [(f, g, self.config) for f, g in pairs_batch]
+        
+        # Use ProcessPoolExecutor for true parallelism
+        with ProcessPoolExecutor(max_workers=self.config.num_workers) as executor:
+            # Submit all pairs for processing
+            future_to_pair = {
+                executor.submit(process_pair_worker, args): args[:2]
+                for args in worker_args
+            }
             
-            self.cache.close()
+            # Process results as they complete
+            for future in as_completed(future_to_pair):
+                f, g = future_to_pair[future]
+                
+                try:
+                    f_result, g_result, q, divisibility, was_cached = future.result()
+                    
+                    if was_cached:
+                        print(f"[CACHED] f={f}, g={g}")
+                    else:
+                        print(f"[CHECKED] f={f}, g={g}")
+                        
+                        if q:
+                            print(f"  Found q={q}")
+                            print(f"  ∂q/∂f : ∂q/∂x = {divisibility['df_divisible']}")
+                            print(f"  ∂q/∂g : ∂q/∂x = {divisibility['dg_divisible']}")
+                        else:
+                            print(f"  No dependency found")
+                        
+                        # Save result with thread-local cache connection
+                        with self.cache_lock:
+                            cache = ResultCache(self.config.cache_file)
+                            try:
+                                cache.save_result(f, g, q, divisibility)
+                            finally:
+                                cache.close()
+                        
+                        # Update state (thread-safe)
+                        with self.state_lock:
+                            self.state.update_progress(0, 0, q is not None)
+                            self.checkpoint_counter += 1
+                            
+                            # Checkpoint
+                            if self.checkpoint_counter >= self.config.checkpoint_interval:
+                                self.state.save(self.config.state_file)
+                                self.checkpoint_counter = 0
+                                print(f"[CHECKPOINT] {self.state.total_pairs_checked} pairs checked")
+                                print()
+                
+                except Exception as e:
+                    print(f"[ERROR] Failed to process f={f}, g={g}: {e}")

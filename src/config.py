@@ -26,6 +26,7 @@ class Config:
     # Performance
     batch_size: int = 100
     checkpoint_interval: int = 10  # Save state every N pairs
+    num_workers: int = 4  # Number of parallel workers (threads)
     
     def __post_init__(self):
         """Validate configuration."""

@@ -33,11 +33,11 @@ python run.py check "x^2 + y^2" "x*y"
 ### Run Brute Force Search
 
 ```bash
-# Start with default settings
+# Start with default settings (4 workers)
 python run.py brute
 
-# Custom parameters
-python run.py brute --max-degree-f 3 --max-degree-g 3 --max-degree-q 4
+# Custom parameters with 8 parallel workers
+python run.py brute --max-degree-f 3 --max-degree-g 3 --max-degree-q 4 --workers 8
 
 # Resume from checkpoint
 python run.py brute --resume

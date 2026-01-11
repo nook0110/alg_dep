@@ -56,6 +56,8 @@ Examples:
                              help='Enumeration strategy (default: lexicographic)')
     brute_parser.add_argument('--checkpoint-interval', type=int, default=10,
                              help='Save state every N pairs (default: 10)')
+    brute_parser.add_argument('--workers', type=int, default=4,
+                             help='Number of parallel workers (default: 4)')
     brute_parser.add_argument('--resume', action='store_true',
                              help='Resume from last checkpoint')
     
@@ -98,7 +100,8 @@ Examples:
                 coeff_min=args.coeff_min,
                 coeff_max=args.coeff_max,
                 enum_strategy=args.strategy,
-                checkpoint_interval=args.checkpoint_interval
+                checkpoint_interval=args.checkpoint_interval,
+                num_workers=args.workers
             )
             runner = BruteForceRunner(config)
             runner.run()
