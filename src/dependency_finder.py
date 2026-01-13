@@ -87,35 +87,26 @@ class DependencyFinder:
             
         Returns:
             Tuple (q, was_trivial) where:
-            - q: Polynomial q in Q[x,u,v] if found, None otherwise
-            - was_trivial: True if a dependency was found but rejected as trivial
+            - q: Polynomial q in Q[x,u,v] if found, None otherwise (even if trivial, we return it)
+            - was_trivial: True if dependency is trivial (only linear x)
         """
         # Try resultant method first
         q = self._try_resultant(f, g)
         if q is not None:
-            if self._is_nontrivial_in_x(q):
-                return q, False
-            else:
-                # Found dependency but it's trivial
-                return None, True
+            is_trivial = not self._is_nontrivial_in_x(q)
+            return q, is_trivial
         
         # Try Gröbner basis as backup
         q = self._try_groebner(f, g)
         if q is not None:
-            if self._is_nontrivial_in_x(q):
-                return q, False
-            else:
-                # Found dependency but it's trivial
-                return None, True
+            is_trivial = not self._is_nontrivial_in_x(q)
+            return q, is_trivial
         
         # Fallback to brute force
         for q in self._generate_candidates():
             if self._is_dependency(q, f, g):
-                if self._is_nontrivial_in_x(q):
-                    return q, False
-                else:
-                    # Found dependency but it's trivial
-                    return None, True
+                is_trivial = not self._is_nontrivial_in_x(q)
+                return q, is_trivial
         
         # No dependency found at all
         return None, False

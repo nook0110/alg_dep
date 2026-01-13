@@ -120,43 +120,70 @@ Examples:
             cache = ResultCache('data/results.db')
             stats = cache.get_statistics()
             
-            print("="*80)
-            print("STATISTICS TABLE")
-            print("="*80)
+            print("="*100)
+            print("STATISTICS: ALL COMBINATIONS")
+            print("="*100)
             print(f"\nTotal pairs checked: {stats['total']}")
             print()
             
-            # Calculate failed counts
-            failed_nontrivial = stats['nontrivial_found'] - stats['both_divisible']
-            failed_df = stats['nontrivial_found'] - (stats['df_divisible_only'] + stats['both_divisible'])
-            failed_dg = stats['nontrivial_found'] - (stats['dg_divisible_only'] + stats['both_divisible'])
+            # Query database for all combinations
+            cursor = cache.conn.execute("""
+                SELECT
+                    CASE WHEN q_poly IS NULL THEN 0 ELSE 1 END as has_dep,
+                    COALESCE(is_trivial, 0) as is_trivial,
+                    COALESCE(df_divisible, 0) as df_div,
+                    COALESCE(dg_divisible, 0) as dg_div,
+                    COUNT(*) as count
+                FROM results
+                GROUP BY has_dep, is_trivial, df_div, dg_div
+                ORDER BY has_dep DESC, is_trivial ASC, df_div DESC, dg_div DESC
+            """)
+            
+            rows = cursor.fetchall()
             
             # Prepare table data
-            dep_pct = (stats['with_dependency'] / stats['total'] * 100) if stats['total'] > 0 else 0
-            nontrivial_pct = (stats['nontrivial_found'] / stats['total'] * 100) if stats['total'] > 0 else 0
-            failed_trivial = stats['trivial_rejected'] + stats['no_dependency']
+            table_data = []
+            for row in rows:
+                has_dep, is_trivial, df_div, dg_div, count = row
+                
+                # Build status columns - always show ✓ or ✗
+                dep_status = "✓" if has_dep else "✗"
+                trivial_status = "✗" if is_trivial else "✓" if has_dep else "✗"
+                df_status = "✓" if df_div else "✗"
+                dg_status = "✓" if dg_div else "✗"
+                both_status = "✓" if (df_div and dg_div) else "✗"
+                
+                # Calculate percentage
+                pct = (count / stats['total'] * 100) if stats['total'] > 0 else 0
+                
+                table_data.append([
+                    dep_status,
+                    trivial_status,
+                    df_status,
+                    dg_status,
+                    both_status,
+                    count,
+                    f"{pct:.2f}%"
+                ])
             
-            df_passed = stats['df_divisible_only'] + stats['both_divisible']
-            df_pct = (df_passed / stats['nontrivial_found'] * 100) if stats['nontrivial_found'] > 0 else 0
-            
-            dg_passed = stats['dg_divisible_only'] + stats['both_divisible']
-            dg_pct = (dg_passed / stats['nontrivial_found'] * 100) if stats['nontrivial_found'] > 0 else 0
-            
-            both_pct = (stats['both_divisible'] / stats['nontrivial_found'] * 100) if stats['nontrivial_found'] > 0 else 0
-            
-            table_data = [
-                ["Dependency found (any)", stats['with_dependency'], stats['no_dependency'], f"{dep_pct:.2f}%"],
-                ["Non-trivial dependency (x² or x*u or x*v)", stats['nontrivial_found'], failed_trivial, f"{nontrivial_pct:.2f}%"],
-                ["∂q/∂f : ∂q/∂x (after substitution)", df_passed, failed_df, f"{df_pct:.2f}%"],
-                ["∂q/∂g : ∂q/∂x (after substitution)", dg_passed, failed_dg, f"{dg_pct:.2f}%"],
-                ["Both divisibility conditions", stats['both_divisible'], failed_nontrivial, f"{both_pct:.2f}%"],
+            headers = [
+                "Dependency\nFound",
+                "Non-trivial\n(x²/x*u/x*v)",
+                "∂q/∂f : ∂q/∂x",
+                "∂q/∂g : ∂q/∂x",
+                "Both\nDivisible",
+                "Count",
+                "Percent"
             ]
             
-            headers = ["Condition", "Passed", "Failed", "Percent"]
             print(tabulate(table_data, headers=headers, tablefmt="grid"))
             
             print()
-            print("Note: Percentages for divisibility conditions are calculated from non-trivial dependencies only.")
+            print("Legend:")
+            print("  ✓ = Passed")
+            print("  ✗ = Failed")
+            print()
+            print("Note: Non-trivial means x appears as x² or x*u or x*v (not just linear like 4x-5)")
             
             cache.close()
         

@@ -40,7 +40,7 @@ def process_pair_worker(args):
         # Find dependency (returns tuple: q, was_trivial)
         q, was_trivial = finder.find_dependency(f, g)
         
-        # Check divisibility if dependency found
+        # Always check divisibility if dependency found (even if trivial)
         divisibility = {}
         if q:
             divisibility = checker.check_conditions(q, f, g)
@@ -164,10 +164,11 @@ class BruteForceRunner:
                     else:
                         print(f"[CHECKED] f={f}, g={g}")
                         
-                        if was_trivial:
-                            print(f"  Found dependency but REJECTED as trivial (only linear x)")
-                        elif q:
-                            print(f"  Found q={q}")
+                        if q:
+                            if was_trivial:
+                                print(f"  Found TRIVIAL dependency (only linear x): q={q}")
+                            else:
+                                print(f"  Found NON-TRIVIAL dependency: q={q}")
                             print(f"  ∂q/∂f : ∂q/∂x = {divisibility['df_divisible']}")
                             print(f"  ∂q/∂g : ∂q/∂x = {divisibility['dg_divisible']}")
                         else:

@@ -63,14 +63,6 @@ class ManualChecker:
         
         q, was_trivial = self.finder.find_dependency(f, g)
         
-        if was_trivial:
-            print("✗ Found dependency but REJECTED as trivial (only linear x)")
-            print("   Trivial dependencies like '4*x - 5' are not meaningful.")
-            print()
-            # Save result with trivial flag
-            self.cache.save_result(f, g, None, {}, is_trivial=True)
-            return
-        
         if not q:
             print("No dependency found within degree bounds.")
             print()
@@ -78,11 +70,15 @@ class ManualChecker:
             self.cache.save_result(f, g, None, {}, is_trivial=False)
             return
         
-        print(f"✓ Found non-trivial dependency:")
+        # Show dependency type
+        if was_trivial:
+            print(f"✗ Found TRIVIAL dependency (only linear x):")
+        else:
+            print(f"✓ Found NON-TRIVIAL dependency:")
         print(f"  q = {q}")
         print()
         
-        # Check divisibility
+        # Always check divisibility (even for trivial dependencies)
         print("Checking divisibility conditions...")
         divisibility = self.checker.check_conditions(q, f, g)
         
@@ -98,7 +94,7 @@ class ManualChecker:
         print()
         
         # Save result
-        self.cache.save_result(f, g, q, divisibility, is_trivial=False)
+        self.cache.save_result(f, g, q, divisibility, is_trivial=was_trivial)
         print("Result saved to cache.")
     
     def _print_result(self, result: dict):
