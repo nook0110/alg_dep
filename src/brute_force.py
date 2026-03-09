@@ -97,7 +97,26 @@ class BruteForceRunner:
                 cache.close()
     
     def _process_batch(self, pairs_batch):
-        worker_args = [(f, g, self.config) for f, g in pairs_batch]
+        cache = ResultCache(self.config.cache_file)
+        cached_pairs = []
+        non_cached_pairs = []
+        
+        try:
+            for f, g in pairs_batch:
+                if cache.get_result(f, g):
+                    cached_pairs.append((f, g))
+                else:
+                    non_cached_pairs.append((f, g))
+        finally:
+            cache.close()
+        
+        for f, g in cached_pairs:
+            logger.info(f"[CACHED] f={f}, g={g}")
+        
+        if not non_cached_pairs:
+            return
+        
+        worker_args = [(f, g, self.config) for f, g in non_cached_pairs]
         
         with ProcessPoolExecutor(max_workers=self.config.num_workers) as executor:
             future_to_pair = {
@@ -110,35 +129,32 @@ class BruteForceRunner:
                 try:
                     f_result, g_result, q, divisibility, was_trivial, was_cached = future.result()
                     
-                    if was_cached:
-                        logger.info(f"[CACHED] f={f}, g={g}")
-                    else:
-                        logger.info(f"[CHECKED] f={f}, g={g}")
-                        
-                        if q:
-                            if was_trivial:
-                                logger.info(f"  Found TRIVIAL dependency (only linear x): q={q}")
-                            else:
-                                logger.info(f"  Found NON-TRIVIAL dependency: q={q}")
-                            logger.info(f"  dq/df : dq/dx = {divisibility['df_divisible']}")
-                            logger.info(f"  dq/dg : dq/dx = {divisibility['dg_divisible']}")
+                    logger.info(f"[CHECKED] f={f}, g={g}")
+                    
+                    if q:
+                        if was_trivial:
+                            logger.info(f"  Found TRIVIAL dependency (only linear x): q={q}")
                         else:
-                            logger.info(f"  No dependency found")
-                        with self.cache_lock:
-                            cache = ResultCache(self.config.cache_file)
-                            try:
-                                cache.save_result(f, g, q, divisibility, was_trivial)
-                            finally:
-                                cache.close()
+                            logger.info(f"  Found NON-TRIVIAL dependency: q={q}")
+                        logger.info(f"  dq/df : dq/dx = {divisibility['df_divisible']}")
+                        logger.info(f"  dq/dg : dq/dx = {divisibility['dg_divisible']}")
+                    else:
+                        logger.info(f"  No dependency found")
+                    with self.cache_lock:
+                        cache = ResultCache(self.config.cache_file)
+                        try:
+                            cache.save_result(f, g, q, divisibility, was_trivial)
+                        finally:
+                            cache.close()
+                    
+                    with self.state_lock:
+                        self.state.update_progress(0, 0, q is not None)
+                        self.checkpoint_counter += 1
                         
-                        with self.state_lock:
-                            self.state.update_progress(0, 0, q is not None)
-                            self.checkpoint_counter += 1
-                            
-                            if self.checkpoint_counter >= self.config.checkpoint_interval:
-                                self.state.save(self.config.state_file)
-                                self.checkpoint_counter = 0
-                                logger.info(f"[CHECKPOINT] {self.state.total_pairs_checked} pairs checked")
+                        if self.checkpoint_counter >= self.config.checkpoint_interval:
+                            self.state.save(self.config.state_file)
+                            self.checkpoint_counter = 0
+                            logger.info(f"[CHECKPOINT] {self.state.total_pairs_checked} pairs checked")
                 
                 except Exception as e:
                     logger.error(f"[ERROR] Failed to process f={f}, g={g}: {e}")
