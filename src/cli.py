@@ -1,7 +1,6 @@
-"""Command-line interface for polynomial dependency checker."""
-
 import argparse
 import sys
+import logging
 from tabulate import tabulate
 
 from .config import Config
@@ -9,9 +8,14 @@ from .brute_force import BruteForceRunner
 from .manual_check import ManualChecker
 from .cache import ResultCache
 
+logger = logging.getLogger(__name__)
+
 
 def main():
-    """Main CLI entry point."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(message)s'
+    )
     parser = argparse.ArgumentParser(
         description="Polynomial Algebraic Dependency Checker",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -120,13 +124,11 @@ Examples:
             cache = ResultCache('data/results.db')
             stats = cache.get_statistics()
             
-            print("="*100)
-            print("STATISTICS: ALL COMBINATIONS")
-            print("="*100)
-            print(f"\nTotal pairs checked: {stats['total']}")
-            print()
-            
-            # Query database for all combinations
+            logger.info("="*100)
+            logger.info("STATISTICS: ALL COMBINATIONS")
+            logger.info("="*100)
+            logger.info(f"\nTotal pairs checked: {stats['total']}")
+            logger.info("")
             cursor = cache.conn.execute("""
                 SELECT
                     CASE WHEN q_poly IS NULL THEN 0 ELSE 1 END as has_dep,
@@ -140,20 +142,15 @@ Examples:
             """)
             
             rows = cursor.fetchall()
-            
-            # Prepare table data
             table_data = []
             for row in rows:
                 has_dep, is_trivial, df_div, dg_div, count = row
                 
-                # Build status columns - always show ✓ or ✗
-                dep_status = "✓" if has_dep else "✗"
-                trivial_status = "✗" if is_trivial else "✓" if has_dep else "✗"
-                df_status = "✓" if df_div else "✗"
-                dg_status = "✓" if dg_div else "✗"
-                both_status = "✓" if (df_div and dg_div) else "✗"
-                
-                # Calculate percentage
+                dep_status = "+" if has_dep else "-"
+                trivial_status = "-" if is_trivial else "+" if has_dep else "-"
+                df_status = "+" if df_div else "-"
+                dg_status = "+" if dg_div else "-"
+                both_status = "+" if (df_div and dg_div) else "-"
                 pct = (count / stats['total'] * 100) if stats['total'] > 0 else 0
                 
                 table_data.append([
@@ -168,22 +165,22 @@ Examples:
             
             headers = [
                 "Dependency\nFound",
-                "Non-trivial\n(x²/x*u/x*v)",
-                "∂q/∂f : ∂q/∂x",
-                "∂q/∂g : ∂q/∂x",
+                "Non-trivial\n(x^2/x*u/x*v)",
+                "dq/df : dq/dx",
+                "dq/dg : dq/dx",
                 "Both\nDivisible",
                 "Count",
                 "Percent"
             ]
             
-            print(tabulate(table_data, headers=headers, tablefmt="grid"))
+            logger.info(tabulate(table_data, headers=headers, tablefmt="grid"))
             
-            print()
-            print("Legend:")
-            print("  ✓ = Passed")
-            print("  ✗ = Failed")
-            print()
-            print("Note: Non-trivial means x appears as x² or x*u or x*v (not just linear like 4x-5)")
+            logger.info("")
+            logger.info("Legend:")
+            logger.info("  + = Passed")
+            logger.info("  - = Failed")
+            logger.info("")
+            logger.info("Note: Non-trivial means x appears as x^2 or x*u or x*v (not just linear like 4x-5)")
             
             cache.close()
         
@@ -191,46 +188,46 @@ Examples:
             cache = ResultCache('data/results.db')
             results = cache.query_results(both_divisible=args.both_divisible)
             
-            print("="*60)
-            print("QUERY RESULTS")
-            print("="*60)
+            logger.info("="*60)
+            logger.info("QUERY RESULTS")
+            logger.info("="*60)
             
             if args.both_divisible:
-                print("Showing pairs where both divisibility conditions hold")
+                logger.info("Showing pairs where both divisibility conditions hold")
             else:
-                print("Showing all results")
+                logger.info("Showing all results")
             
-            print(f"Limit: {args.limit}")
-            print()
+            logger.info(f"Limit: {args.limit}")
+            logger.info("")
             
             if not results:
-                print("No results found.")
+                logger.info("No results found.")
             else:
                 for i, result in enumerate(results[:args.limit], 1):
-                    print(f"Result #{i}")
-                    print(f"  f = {result['f_poly']}")
-                    print(f"  g = {result['g_poly']}")
+                    logger.info(f"Result #{i}")
+                    logger.info(f"  f = {result['f_poly']}")
+                    logger.info(f"  g = {result['g_poly']}")
                     
                     if result['q_poly']:
-                        print(f"  q = {result['q_poly']}")
-                        print(f"  ∂q/∂u : ∂q/∂x = {bool(result['df_divisible'])}")
-                        print(f"  ∂q/∂v : ∂q/∂x = {bool(result['dg_divisible'])}")
+                        logger.info(f"  q = {result['q_poly']}")
+                        logger.info(f"  dq/du : dq/dx = {bool(result['df_divisible'])}")
+                        logger.info(f"  dq/dv : dq/dx = {bool(result['dg_divisible'])}")
                     else:
-                        print(f"  No dependency found")
+                        logger.info(f"  No dependency found")
                     
-                    print(f"  Timestamp: {result['timestamp']}")
-                    print()
+                    logger.info(f"  Timestamp: {result['timestamp']}")
+                    logger.info("")
                 
                 if len(results) > args.limit:
-                    print(f"... and {len(results) - args.limit} more results")
+                    logger.info(f"... and {len(results) - args.limit} more results")
             
             cache.close()
     
     except KeyboardInterrupt:
-        print("\n\nInterrupted by user.")
+        logger.info("\n\nInterrupted by user.")
         sys.exit(1)
     except Exception as e:
-        print(f"\nError: {e}", file=sys.stderr)
+        logger.error(f"\nError: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

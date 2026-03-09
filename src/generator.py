@@ -1,5 +1,3 @@
-"""Polynomial generator for brute force enumeration."""
-
 from itertools import product
 from typing import Iterator, Tuple
 from sympy import symbols
@@ -9,25 +7,12 @@ from .config import Config
 
 
 class PolynomialGenerator:
-    """Generate polynomial pairs for brute force search."""
     
     def __init__(self, config: Config):
-        """
-        Initialize generator with configuration.
-        
-        Args:
-            config: Configuration object
-        """
         self.config = config
         self.x, self.y = x, y
     
     def generate_pairs(self) -> Iterator[Tuple]:
-        """
-        Generate (f, g) polynomial pairs according to strategy.
-        
-        Yields:
-            Tuples of (f, g) where f and g are SymPy expressions
-        """
         if self.config.enum_strategy == "lexicographic":
             yield from self._generate_lexicographic()
         elif self.config.enum_strategy == "degree_first":
@@ -36,7 +21,6 @@ class PolynomialGenerator:
             raise ValueError(f"Unknown strategy: {self.config.enum_strategy}")
     
     def _generate_lexicographic(self) -> Iterator[Tuple]:
-        """Generate polynomials in lexicographic order of coefficients."""
         for f in self._generate_polynomials(self.config.max_degree_f):
             for g in self._generate_polynomials(self.config.max_degree_g):
                 if self._should_skip(f, g):
@@ -44,7 +28,6 @@ class PolynomialGenerator:
                 yield (f, g)
     
     def _generate_degree_first(self) -> Iterator[Tuple]:
-        """Generate polynomials degree by degree."""
         for deg_f in range(self.config.max_degree_f + 1):
             for deg_g in range(self.config.max_degree_g + 1):
                 for f in self._generate_polynomials_of_degree(deg_f):
@@ -54,47 +37,22 @@ class PolynomialGenerator:
                         yield (f, g)
     
     def _generate_polynomials(self, max_degree: int) -> Iterator:
-        """
-        Generate all polynomials up to max_degree.
-        
-        Args:
-            max_degree: Maximum total degree
-            
-        Yields:
-            SymPy polynomial expressions
-        """
-        # Generate all monomials up to max_degree
         monomials = []
         for deg in range(max_degree + 1):
             for i in range(deg + 1):
                 j = deg - i
-                monomials.append((i, j))  # x^i * y^j
-        
-        # Generate all coefficient combinations
+                monomials.append((i, j))
         coeff_range = range(self.config.coeff_min, self.config.coeff_max + 1)
         
         for coeffs in product(coeff_range, repeat=len(monomials)):
-            # Build polynomial
             poly = sum(c * (self.x**i) * (self.y**j) 
                       for c, (i, j) in zip(coeffs, monomials))
-            
-            # Skip if all coefficients are zero
             if poly == 0 and self.config.skip_trivial:
                 continue
             
             yield poly
     
     def _generate_polynomials_of_degree(self, degree: int) -> Iterator:
-        """
-        Generate all polynomials of exact degree.
-        
-        Args:
-            degree: Exact degree
-            
-        Yields:
-            SymPy polynomial expressions
-        """
-        # Generate monomials of exact degree
         monomials = []
         for i in range(degree + 1):
             j = degree - i
@@ -121,6 +79,23 @@ class PolynomialGenerator:
                 continue
             
             yield poly
+    
+    def count_total_pairs(self) -> int:
+        """
+        Count total number of polynomial pairs to be generated.
+        
+        Returns:
+            Total number of pairs
+        """
+        num_coeffs_f = sum(deg + 1 for deg in range(self.config.max_degree_f + 1))
+        num_coeffs_g = sum(deg + 1 for deg in range(self.config.max_degree_g + 1))
+        
+        coeff_range_size = self.config.coeff_max - self.config.coeff_min + 1
+        
+        total_f = coeff_range_size ** num_coeffs_f
+        total_g = coeff_range_size ** num_coeffs_g
+        
+        return total_f * total_g
     
     def _should_skip(self, f, g) -> bool:
         """
