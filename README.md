@@ -262,9 +262,7 @@ The system consists of modular components:
 - **[`brute_force.py`](src/brute_force.py:1)**: Brute force runner
 - **[`manual_check.py`](src/manual_check.py:1)**: Manual checker
 - **[`cli.py`](src/cli.py:1)**: Command-line interface
-
-See [`ARCHITECTURE.md`](ARCHITECTURE.md:1) for detailed design documentation.
-
+- 
 ## Performance Considerations
 
 - **Computational Complexity**: Grows exponentially with degree and coefficient range
