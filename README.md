@@ -4,12 +4,11 @@ A Python tool to analyze polynomial pairs (f, g) ∈ Z[x,y] to find algebraic de
 
 ## Features
 
-✅ **Brute Force Mode**: Systematically enumerate and check polynomial pairs  
-✅ **Manual Check Mode**: Test specific polynomial pairs  
-✅ **State Persistence**: Resume interrupted searches from checkpoints  
-✅ **Result Caching**: SQLite database prevents recomputation  
-✅ **Configurable**: Adjustable degrees, coefficient ranges, enumeration strategies  
-✅ **Simple Syntax**: Input polynomials like `x^2 + y^2 - 1`  
+**Brute Force Mode**: Systematically enumerate and check polynomial pairs  
+**Manual Check Mode**: Test specific polynomial pairs  
+**State Persistence**: Resume interrupted searches from checkpoints  
+**Result Caching**: SQLite database prevents recomputation  
+
 
 ## Installation
 
